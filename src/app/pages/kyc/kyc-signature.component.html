@@ -1,0 +1,95 @@
+@if (done) {
+  <div class="mx-auto flex max-w-xl flex-col items-center px-6 py-24 text-center">
+    <lucide-angular [img]="icons.CheckCircle2" class="size-14 text-brand"></lucide-angular>
+    <h1 class="mt-6 text-3xl font-extrabold">KYC completed</h1>
+    <p class="mt-2 text-muted-foreground">
+      {{ data.customerName || 'The customer' }} has been verified and the signed T&amp;C is on file.
+    </p>
+    <app-button extraClass="mt-8 rounded-xl" (click)="backToDashboard()">Back to dashboard</app-button>
+  </div>
+} @else {
+  <div class="mx-auto max-w-3xl px-6 py-10">
+    <app-steps [current]="2"></app-steps>
+    <h1 class="mt-6 text-3xl font-extrabold">Signature &amp; Terms</h1>
+    <p class="mt-1 text-muted-foreground">Hand the device to the customer to review and sign.</p>
+
+    @if (data.customerName) {
+      <div class="mt-6 rounded-2xl border border-border bg-accent/60 px-5 py-4 text-sm">
+        <span class="font-semibold">{{ data.customerName }}</span>
+        <span class="text-muted-foreground">
+          &nbsp;· {{ data.documentType }} {{ data.documentNumber }} · {{ data.nationality }}
+        </span>
+      </div>
+    }
+
+    <section class="mt-6 rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <div class="flex items-center gap-2">
+        <lucide-angular [img]="icons.FileText" class="size-4 text-brand"></lucide-angular>
+        <h2 class="text-lg font-bold">Terms &amp; Conditions</h2>
+      </div>
+      <div class="mt-4 h-56 overflow-y-auto rounded-xl bg-secondary p-4 text-sm leading-relaxed text-muted-foreground">
+        <p class="font-semibold text-foreground">e&amp; Consumer Services Agreement</p>
+        <p class="mt-2">
+          1. By signing below, the customer confirms that all identity information provided is true, accurate and matches the presented identity document.
+        </p>
+        <p class="mt-2">
+          2. The customer authorises e&amp; to verify the submitted Emirates ID details with the relevant authorities and to retain a copy for regulatory records in line with TDRA requirements.
+        </p>
+        <p class="mt-2">
+          3. Services are billed monthly in advance. Usage outside the subscribed bundle is charged at standard out-of-bundle rates published on eand.ae.
+        </p>
+        <p class="mt-2">
+          4. The customer may cancel within the statutory cooling-off period. Device instalment plans remain payable in full upon early termination.
+        </p>
+        <p class="mt-2">
+          5. Personal data is processed in accordance with the e&amp; Privacy Policy and UAE data protection law, and is never shared with third parties for marketing without consent.
+        </p>
+        <p class="mt-2">
+          6. e&amp; may update these terms with 30 days' notice sent to the registered mobile number or email address.
+        </p>
+      </div>
+
+      <div class="mt-4 flex items-start gap-3">
+        <input
+          id="tnc"
+          type="checkbox"
+          [(ngModel)]="accepted"
+          name="tnc"
+          class="mt-0.5 size-4 rounded border-input"
+        />
+        <label for="tnc" class="text-sm font-normal leading-relaxed">
+          The customer has read and accepts the e&amp; Terms &amp; Conditions and Privacy Policy.
+        </label>
+      </div>
+    </section>
+
+    <section class="mt-6 rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold">Customer signature</h2>
+        <app-button variant="ghost" size="sm" (click)="clearSignature()">
+          <lucide-angular [img]="icons.Eraser" class="mr-1 size-4"></lucide-angular> Clear
+        </app-button>
+      </div>
+      <div class="mt-4 rounded-xl border-2 border-dashed border-border bg-background">
+        <canvas
+          #canvasEl
+          (pointerdown)="start($event)"
+          (pointermove)="move($event)"
+          (pointerup)="end()"
+          (pointerleave)="end()"
+          class="h-48 w-full touch-none rounded-xl"
+        ></canvas>
+      </div>
+      <p class="mt-2 text-xs text-muted-foreground">
+        {{ hasSignature ? 'Signature captured.' : 'Sign inside the box using a finger or stylus.' }}
+      </p>
+    </section>
+
+    <div class="mt-8 flex flex-wrap justify-between gap-3">
+      <app-button variant="outline" extraClass="rounded-xl" (click)="back()">
+        <lucide-angular [img]="icons.ArrowLeft" class="mr-1 size-4"></lucide-angular> Back
+      </app-button>
+      <app-button size="lg" extraClass="rounded-xl" (click)="submit()">Submit KYC</app-button>
+    </div>
+  </div>
+}

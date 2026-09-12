@@ -1,0 +1,27 @@
+{
+  "name": "@eand/eid-mrz-sdk",
+  "version": "1.0.0",
+  "description": "Framework-agnostic, dependency-free SDK to capture and parse the Emirates ID machine-readable zone (ICAO 9303 TD1).",
+  "type": "module",
+  "main": "./index.ts",
+  "module": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "sideEffects": false,
+  "files": [
+    "index.ts",
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "emirates-id",
+    "eid",
+    "mrz",
+    "icao-9303",
+    "td1",
+    "sdk"
+  ],
+  "license": "UNLICENSED"
+}

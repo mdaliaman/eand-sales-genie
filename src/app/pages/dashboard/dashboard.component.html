@@ -1,0 +1,43 @@
+<div class="mx-auto max-w-6xl px-6 py-10">
+  <h1 class="text-3xl font-extrabold">Hello, {{ firstName() }} 👋</h1>
+  <p class="mt-1 text-muted-foreground">Here's how your pipeline is looking today.</p>
+
+  <div class="mt-8 grid gap-4 sm:grid-cols-3">
+    @for (s of stats; track s.label) {
+      <div class="rounded-2xl border border-border bg-card p-5 shadow-soft">
+        <div class="flex items-center justify-between">
+          <span class="text-sm text-muted-foreground">{{ s.label }}</span>
+          <lucide-angular [img]="s.icon" class="size-4 text-brand"></lucide-angular>
+        </div>
+        <p class="mt-3 text-3xl font-bold">{{ s.value }}</p>
+        <p class="mt-1 text-xs font-medium text-brand">{{ s.delta }}</p>
+      </div>
+    }
+  </div>
+
+  <div class="mt-6 grid gap-4 md:grid-cols-2">
+    <a routerLink="/sales-bot" class="group rounded-2xl bg-brand-gradient p-6 text-primary-foreground shadow-soft">
+      <lucide-angular [img]="icons.Bot" class="size-6"></lucide-angular>
+      <h2 class="mt-4 text-xl font-bold">e&amp; Sales Genie</h2>
+      <p class="mt-1 text-sm opacity-85">
+        Ask for the best plan, bundle pricing or objection handling in seconds.
+      </p>
+      <span class="mt-4 inline-flex items-center gap-1 text-sm font-semibold">
+        Open chat
+        <lucide-angular [img]="icons.ArrowUpRight" class="size-4 transition-transform group-hover:translate-x-0.5"></lucide-angular>
+      </span>
+    </a>
+
+    <a routerLink="/kyc" class="group rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <lucide-angular [img]="icons.IdCard" class="size-6 text-brand"></lucide-angular>
+      <h2 class="mt-4 text-xl font-bold">Customer KYC</h2>
+      <p class="mt-1 text-sm text-muted-foreground">
+        Capture customer details, Emirates ID data, signature and T&amp;C consent.
+      </p>
+      <span class="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-brand">
+        Start onboarding
+        <lucide-angular [img]="icons.ArrowUpRight" class="size-4 transition-transform group-hover:translate-x-0.5"></lucide-angular>
+      </span>
+    </a>
+  </div>
+</div>

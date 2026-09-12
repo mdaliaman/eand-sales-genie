@@ -1,0 +1,140 @@
+<div class="mx-auto max-w-3xl px-6 py-10">
+  <app-steps [current]="1"></app-steps>
+  <h1 class="mt-6 text-3xl font-extrabold">Customer KYC</h1>
+  <p class="mt-1 text-muted-foreground">
+    Capture the customer's identity details exactly as they appear on the document.
+  </p>
+
+  <form (ngSubmit)="onSubmit()" class="mt-8 space-y-8">
+    <section class="rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <h2 class="text-lg font-bold">Customer details</h2>
+      <div class="mt-5 grid gap-5 sm:grid-cols-2">
+        <div class="space-y-2 sm:col-span-2">
+          <label for="customerName" class="text-sm font-medium leading-none">Customer name</label>
+          <input
+            id="customerName"
+            maxlength="100"
+            [(ngModel)]="data.customerName"
+            name="customerName"
+            placeholder="As per Emirates ID"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          @if (err('customerName'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+        <div class="space-y-2">
+          <label for="dob" class="text-sm font-medium leading-none">Date of birth</label>
+          <input
+            id="dob"
+            type="date"
+            [(ngModel)]="data.dob"
+            name="dob"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          @if (err('dob'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium leading-none">Gender</label>
+          <select
+            [(ngModel)]="data.gender"
+            name="gender"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="" disabled selected>Select gender</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+          @if (err('gender'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+        <div class="space-y-2 sm:col-span-2">
+          <label class="text-sm font-medium leading-none">Nationality</label>
+          <select
+            [(ngModel)]="data.nationality"
+            name="nationality"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="" disabled selected>Select nationality</option>
+            @for (n of nationalities; track n) {
+              <option [value]="n">{{ n }}</option>
+            }
+          </select>
+          @if (err('nationality'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <h2 class="text-lg font-bold">Identity document</h2>
+      <div class="mt-5 grid gap-5 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium leading-none">Document type</label>
+          <select
+            [(ngModel)]="data.documentType"
+            name="documentType"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="Emirates ID">Emirates ID</option>
+            <option value="Passport">Passport</option>
+            <option value="GCC ID">GCC ID</option>
+          </select>
+          @if (err('documentType'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+        <div class="space-y-2">
+          <label for="documentNumber" class="text-sm font-medium leading-none">Document number</label>
+          <input
+            id="documentNumber"
+            maxlength="30"
+            [(ngModel)]="data.documentNumber"
+            name="documentNumber"
+            placeholder="784-XXXX-XXXXXXX-X"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          @if (err('documentNumber'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+        <div class="space-y-2">
+          <label for="dateOfIssue" class="text-sm font-medium leading-none">Date of issue</label>
+          <input
+            id="dateOfIssue"
+            type="date"
+            [(ngModel)]="data.dateOfIssue"
+            name="dateOfIssue"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          @if (err('dateOfIssue'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+        <div class="space-y-2">
+          <label for="dateOfExpiry" class="text-sm font-medium leading-none">Date of expiry</label>
+          <input
+            id="dateOfExpiry"
+            type="date"
+            [(ngModel)]="data.dateOfExpiry"
+            name="dateOfExpiry"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          @if (err('dateOfExpiry'); as e) {
+            <p class="text-xs text-destructive">{{ e }}</p>
+          }
+        </div>
+      </div>
+    </section>
+
+    <div class="flex justify-end">
+      <app-button type="submit" size="lg" extraClass="rounded-xl">
+        Next <lucide-angular [img]="icons.ArrowRight" class="ml-1 size-4"></lucide-angular>
+      </app-button>
+    </div>
+  </form>
+</div>

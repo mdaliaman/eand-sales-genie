@@ -1,0 +1,76 @@
+@if (auth.ready() && auth.user()) {
+  <div class="min-h-screen bg-background lg:flex">
+    <aside
+      class="fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-sidebar text-sidebar-foreground transition-transform lg:static lg:translate-x-0"
+      [ngClass]="open() ? 'translate-x-0' : '-translate-x-full'"
+    >
+      <div class="flex items-center justify-between px-6 py-6">
+        <div>
+          <span class="font-display text-3xl font-extrabold text-brand">e&amp;</span>
+          <p class="text-xs font-medium text-sidebar-foreground/60">Sales Workspace</p>
+        </div>
+        <button class="lg:hidden" (click)="closeMenu()" aria-label="Close menu">
+          <lucide-angular [img]="icons.X" class="size-5"></lucide-angular>
+        </button>
+      </div>
+
+      <nav class="flex-1 space-y-1 px-3">
+        @for (item of nav; track item.to) {
+          <a
+            [routerLink]="item.to"
+            routerLinkActive="bg-brand text-brand-foreground"
+            (click)="closeMenu()"
+            class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <lucide-angular [img]="item.icon" class="size-4.5"></lucide-angular>
+            {{ item.label }}
+            @if (item.badge) {
+              <span
+                class="ml-auto rounded-full bg-brand/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-foreground"
+              >
+                {{ item.badge }}
+              </span>
+            }
+          </a>
+        }
+      </nav>
+
+      <div class="border-t border-sidebar-border p-4">
+        <div class="flex items-center gap-3">
+          <div class="flex size-9 items-center justify-center rounded-full bg-brand text-sm font-bold text-brand-foreground">
+            {{ initial() }}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-semibold">{{ auth.user()?.name }}</p>
+            <p class="truncate text-xs text-sidebar-foreground/60">{{ auth.user()?.email }}</p>
+          </div>
+          <button
+            aria-label="Sign out"
+            (click)="signOut()"
+            class="rounded-lg p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent"
+          >
+            <lucide-angular [img]="icons.LogOut" class="size-4"></lucide-angular>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    @if (open()) {
+      <div class="fixed inset-0 z-30 bg-foreground/40 lg:hidden" (click)="closeMenu()"></div>
+    }
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="flex items-center gap-3 border-b border-border bg-card px-4 py-3 lg:hidden">
+        <app-button variant="ghost" size="icon" (click)="toggleMenu()" aria-label="Open menu">
+          <lucide-angular [img]="icons.Menu" class="size-5"></lucide-angular>
+        </app-button>
+        <span class="font-display text-xl font-extrabold text-brand">e&amp;</span>
+      </header>
+      <main class="min-w-0 flex-1">
+        <router-outlet></router-outlet>
+      </main>
+    </div>
+  </div>
+} @else {
+  <div class="min-h-screen bg-background"></div>
+}

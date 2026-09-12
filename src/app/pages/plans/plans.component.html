@@ -1,0 +1,23 @@
+<div class="mx-auto max-w-6xl px-6 py-10">
+  <h1 class="text-3xl font-extrabold">Plans &amp; Offers</h1>
+  <p class="mt-1 text-muted-foreground">Live catalogue for this quarter.</p>
+  <div class="mt-8 grid gap-4 md:grid-cols-3">
+    @for (p of plans; track p.name) {
+      <div class="rounded-2xl border border-border bg-card p-6 shadow-soft">
+        <h2 class="text-lg font-bold">{{ p.name }}</h2>
+        <p class="mt-2 text-3xl font-extrabold text-brand">
+          AED {{ p.price }}
+          <span class="text-sm font-medium text-muted-foreground">/mo</span>
+        </p>
+        <ul class="mt-4 space-y-2 text-sm">
+          @for (perk of p.perks; track perk) {
+            <li class="flex items-center gap-2">
+              <lucide-angular [img]="icons.Check" class="size-4 text-brand"></lucide-angular>
+              {{ perk }}
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+</div>
