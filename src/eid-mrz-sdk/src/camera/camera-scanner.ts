@@ -5,18 +5,37 @@
  *   const rawMrz = await scanner.scan();   // resolves with a 3-line TD1 string
  *   scanner.dispose();                     // releases the OCR worker
  *
- * `scan()` opens the rear camera, streams it behind an alignment frame, and OCRs
- * the framed band every ~1.2s until a valid Emirates ID TD1 zone is read (or the
- * user taps Capture / Cancel, or it times out).
+ * `scan()` opens the rear camera behind a card-shaped view finder and reads the
+ * MRZ **automatically** — there is nothing for the user to tap. The only control
+ * is a close button. It resolves as soon as a TD1 zone whose check digits verify
+ * is recognised.
  */
 
 import { parseMrz } from '../parser';
-import type { CameraScannerOptions, OcrEngine } from '../types';
+import type { CameraScannerOptions, EidMrzData, OcrEngine } from '../types';
 import { createTesseractEngine } from './ocr';
 import { extractTd1 } from './mrz-extract';
-import { SCANNER_STYLE_ID, scannerCss } from './styles';
+import { MRZ_BAND_HEIGHT, MRZ_BAND_INSET, SCANNER_STYLE_ID, scannerCss } from './styles';
 
 const DEFAULT_ACCENT = '#e30613'; // e& red
+
+/** A normalised sub-rectangle of the view finder, in 0–1 fractions. */
+interface Region {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The MRZ band at the foot of the card — the primary place we look. */
+const BAND_REGION: Region = {
+  x: MRZ_BAND_INSET,
+  y: 1 - MRZ_BAND_HEIGHT,
+  w: 1 - MRZ_BAND_INSET * 2,
+  h: MRZ_BAND_HEIGHT,
+};
+/** The whole view finder — a fallback for when the card is framed loosely. */
+const FULL_REGION: Region = { x: 0, y: 0, w: 1, h: 1 };
 
 /** Rejection reason when the user dismisses the scanner. */
 export class MrzCaptureCancelled extends Error {
@@ -29,9 +48,9 @@ export class MrzCaptureCancelled extends Error {
 interface ScanUi {
   overlay: HTMLDivElement;
   video: HTMLVideoElement;
+  frame: HTMLDivElement;
   statusText: HTMLSpanElement;
   statusDot: HTMLSpanElement;
-  captureBtn: HTMLButtonElement;
 }
 
 export class CameraScanner {
@@ -47,11 +66,14 @@ export class CameraScanner {
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private busy = false;
   private settled = false;
+  private attempts = 0;
+  /** Last structurally valid read, used if the scan times out before verifying. */
+  private bestCandidate: string | null = null;
 
   constructor(options: CameraScannerOptions = {}) {
     this.opts = {
       facingMode: options.facingMode ?? 'environment',
-      scanIntervalMs: options.scanIntervalMs ?? 1200,
+      scanIntervalMs: options.scanIntervalMs ?? 700,
       timeoutMs: options.timeoutMs ?? 60000,
       requireValidCheckDigits: options.requireValidCheckDigits ?? true,
       accentColor: options.accentColor ?? DEFAULT_ACCENT,
@@ -102,6 +124,16 @@ export class CameraScanner {
         reject(new Error(support.reason));
         return;
       }
+      if (this.ui) {
+        reject(new Error('A scan is already in progress.'));
+        return;
+      }
+
+      // Reset per-scan state so the same instance can be scanned with repeatedly.
+      this.settled = false;
+      this.busy = false;
+      this.attempts = 0;
+      this.bestCandidate = null;
 
       const settle = (fn: () => void) => {
         if (this.settled) return;
@@ -115,21 +147,19 @@ export class CameraScanner {
       this.mountStyle();
       const mount = this.opts.mountEl ?? document.body;
 
-      this.buildUi({
-        onCancel: () => fail(new MrzCaptureCancelled()),
-        onCapture: () => void this.attempt(done, { lenient: true }),
-      });
+      this.buildUi({ onCancel: () => fail(new MrzCaptureCancelled()) });
       mount.appendChild(this.ui!.overlay);
 
       this.startCamera()
         .then(() => {
-          this.setStatus('Align the MRZ (the code lines) inside the frame', 'idle');
+          this.setStatus('Fit the back of the card inside the frame', 'idle');
           this.scheduleLoop(done);
           if (this.opts.timeoutMs > 0) {
-            this.timeoutTimer = setTimeout(
-              () => fail(new Error('Timed out before a readable MRZ was found.')),
-              this.opts.timeoutMs,
-            );
+            this.timeoutTimer = setTimeout(() => {
+              // Rather than losing a good-but-unverified read, hand it back.
+              if (this.bestCandidate) done(this.bestCandidate);
+              else fail(new Error('Timed out before a readable MRZ was found.'));
+            }, this.opts.timeoutMs);
           }
         })
         .catch((err: unknown) => {
@@ -162,12 +192,27 @@ export class CameraScanner {
     video.setAttribute('playsinline', 'true');
     video.muted = true;
     await video.play().catch(() => undefined);
-    // Wait for real dimensions so cropping maths are valid.
+    // Wait for real dimensions so the crop maths are valid.
     if (!video.videoWidth) {
       await new Promise<void>((r) => {
         video.onloadedmetadata = () => r();
         setTimeout(r, 2000);
       });
+    }
+    await this.applyFocusHints();
+  }
+
+  /** Ask for continuous autofocus / macro-ish behaviour where supported. */
+  private async applyFocusHints(): Promise<void> {
+    const track = this.stream?.getVideoTracks()[0];
+    if (!track?.applyConstraints) return;
+    const caps = track.getCapabilities?.() as { focusMode?: string[] } | undefined;
+    if (caps?.focusMode?.includes('continuous')) {
+      await track
+        .applyConstraints({
+          advanced: [{ focusMode: 'continuous' }],
+        } as unknown as MediaTrackConstraints)
+        .catch(() => undefined);
     }
   }
 
@@ -189,50 +234,69 @@ export class CameraScanner {
 
   private scheduleLoop(done: (mrz: string) => void): void {
     this.loopTimer = setTimeout(() => {
-      void this.attempt(done, { lenient: false }).finally(() => {
+      void this.attempt(done).finally(() => {
         if (!this.settled) this.scheduleLoop(done);
       });
     }, this.opts.scanIntervalMs);
   }
 
-  private async attempt(
-    done: (mrz: string) => void,
-    { lenient }: { lenient: boolean },
-  ): Promise<void> {
+  private async attempt(done: (mrz: string) => void): Promise<void> {
     if (this.busy || this.settled || !this.ui) return;
     this.busy = true;
-    if (lenient) this.ui.captureBtn.disabled = true;
-    this.setStatus(lenient ? 'Reading…' : this.ui.statusText.textContent ?? '', 'busy');
+    this.attempts += 1;
+
+    // Mostly read the MRZ band; every third pass sweep the whole card in case
+    // the holder framed it loosely.
+    const region = this.attempts % 3 === 0 ? FULL_REGION : BAND_REGION;
 
     try {
-      const frame = this.grabFrame();
+      const frame = this.grabFrame(region);
       if (!frame) return;
+      this.setStatus('Reading…', 'busy');
+
       const text = await this.ocr.recognize(frame);
+      if (this.settled) return;
+
       const candidate = extractTd1(text);
       if (!candidate) {
-        if (lenient) this.setStatus('No MRZ detected — hold steady and try again', 'error');
+        this.setStatus('Hold steady — looking for the code lines', 'idle');
         return;
       }
 
       const parsed = parseMrz(candidate);
-      const acceptable =
-        parsed.success && (parsed.valid || (lenient && !this.opts.requireValidCheckDigits) || lenient);
+      // Only remember a near-miss: at least half the check digits must verify,
+      // otherwise the timeout fallback could hand back a misread.
+      if (parsed.success && this.passingChecks(parsed.data) >= 2) {
+        this.bestCandidate = candidate;
+      }
 
-      if (acceptable) {
-        this.setStatus(parsed.valid ? 'MRZ verified' : 'MRZ captured (check digits unverified)', 'ok');
+      if (parsed.valid || (parsed.success && !this.opts.requireValidCheckDigits)) {
+        this.setStatus('MRZ verified', 'ok');
         done(candidate);
         return;
       }
       this.setStatus(
-        parsed.success ? 'Sharpen focus — check digits not matching yet' : 'Keep the code inside the frame',
-        lenient ? 'error' : 'idle',
+        parsed.success
+          ? 'Almost — hold still so every character is sharp'
+          : 'Hold steady — looking for the code lines',
+        parsed.success ? 'error' : 'idle',
       );
     } catch (err) {
       this.setStatus(this.describeOcrError(err), 'error');
     } finally {
       this.busy = false;
-      if (this.ui && !this.settled) this.ui.captureBtn.disabled = false;
     }
+  }
+
+  /** How many of the four TD1 check digits verified. */
+  private passingChecks(data: EidMrzData | null): number {
+    if (!data) return 0;
+    return (
+      Number(data.documentNumberValid) +
+      Number(data.dateOfBirthValid) +
+      Number(data.dateOfExpiryValid) +
+      Number(data.compositeValid)
+    );
   }
 
   private describeOcrError(err: unknown): string {
@@ -240,41 +304,83 @@ export class CameraScanner {
     if (/tesseract/i.test(msg) || /load/i.test(msg)) {
       return 'OCR engine failed to load. Check the network connection.';
     }
-    return 'OCR failed on that frame — trying again';
+    return 'That frame could not be read — trying again';
   }
 
-  /** Crop the alignment band from the video, boost contrast, return a canvas. */
-  private grabFrame(): HTMLCanvasElement | null {
-    const { video } = this.ui!;
+  /**
+   * Crop `region` of the view finder out of the video and return it as a canvas.
+   *
+   * The video is rendered with `object-fit: cover`, so the on-screen frame has to
+   * be mapped back through that scale/offset to source pixels.
+   */
+  private grabFrame(region: Region): HTMLCanvasElement | null {
+    const { video, frame } = this.ui!;
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     if (!vw || !vh) return null;
 
-    // Alignment frame: 92% width, aspect 7 : 1.4  (matches the CSS frame).
-    const bandW = vw * 0.92;
-    const bandH = bandW * (1.4 / 7);
-    const sx = (vw - bandW) / 2;
-    const sy = (vh - bandH) / 2;
+    const videoBox = video.getBoundingClientRect();
+    const frameBox = frame.getBoundingClientRect();
+    if (!videoBox.width || !frameBox.width) return null;
 
-    const scale = Math.min(3, 1400 / bandW);
+    // `object-fit: cover` scales by the larger ratio and centres the overflow.
+    const scale = Math.max(videoBox.width / vw, videoBox.height / vh);
+    const offX = (videoBox.width - vw * scale) / 2;
+    const offY = (videoBox.height - vh * scale) / 2;
+
+    const toSource = (clientX: number, clientY: number) => ({
+      x: (clientX - videoBox.left - offX) / scale,
+      y: (clientY - videoBox.top - offY) / scale,
+    });
+
+    const topLeft = toSource(
+      frameBox.left + frameBox.width * region.x,
+      frameBox.top + frameBox.height * region.y,
+    );
+    const sw = (frameBox.width * region.w) / scale;
+    const sh = (frameBox.height * region.h) / scale;
+
+    // Clamp into the source frame.
+    const sx = Math.max(0, Math.min(topLeft.x, vw - 1));
+    const sy = Math.max(0, Math.min(topLeft.y, vh - 1));
+    const cw = Math.max(1, Math.min(sw, vw - sx));
+    const ch = Math.max(1, Math.min(sh, vh - sy));
+
+    // Upscale modestly — Tesseract wants roughly 25-40px tall glyphs.
+    const outScale = Math.min(3, 1500 / cw);
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bandW * scale);
-    canvas.height = Math.round(bandH * scale);
-    const ctx = canvas.getContext('2d');
+    canvas.width = Math.round(cw * outScale);
+    canvas.height = Math.round(ch * outScale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
 
-    ctx.drawImage(video, sx, sy, bandW, bandH, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+    this.sharpenForOcr(ctx, canvas.width, canvas.height);
+    return canvas;
+  }
 
-    // Grayscale + simple contrast stretch — materially improves MRZ OCR.
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  /** Grayscale + adaptive contrast stretch — materially improves MRZ OCR. */
+  private sharpenForOcr(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      const c = g < 110 ? g * 0.6 : g > 150 ? Math.min(255, g * 1.25) : g;
+
+    let min = 255;
+    let max = 0;
+    const gray = new Uint8ClampedArray(w * h);
+    for (let i = 0, p = 0; i < d.length; i += 4, p += 1) {
+      const g = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+      gray[p] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+    const span = Math.max(1, max - min);
+    for (let i = 0, p = 0; i < d.length; i += 4, p += 1) {
+      // Stretch to full range, then push mid-tones apart.
+      const n = ((gray[p] - min) / span) * 255;
+      const c = n < 128 ? n * 0.72 : Math.min(255, 128 + (n - 128) * 1.35);
       d[i] = d[i + 1] = d[i + 2] = c;
     }
     ctx.putImageData(img, 0, 0);
-    return canvas;
   }
 
   // -------------------------------------------------------------------- ui ----
@@ -289,7 +395,7 @@ export class CameraScanner {
     this.styleEl = style;
   }
 
-  private buildUi(handlers: { onCancel: () => void; onCapture: () => void }): void {
+  private buildUi(handlers: { onCancel: () => void }): void {
     const el = <K extends keyof HTMLElementTagNameMap>(
       tag: K,
       className?: string,
@@ -310,49 +416,43 @@ export class CameraScanner {
     brand.append(el('span', 'eidmrz-logo', 'e&'), el('span', 'eidmrz-title', 'Emirates ID · MRZ scan'));
     const close = el('button', 'eidmrz-close', '✕');
     close.type = 'button';
-    close.setAttribute('aria-label', 'Cancel');
+    close.setAttribute('aria-label', 'Close scanner');
     close.addEventListener('click', handlers.onCancel);
     topbar.append(brand, close);
 
     const stage = el('div', 'eidmrz-stage');
     const video = el('video', 'eidmrz-video');
-    const scrim = el('div', 'eidmrz-scrim');
-    const frame = el('div', 'eidmrz-frame');
-    frame.append(el('i'), el('div', 'eidmrz-scanline'));
-    const hint = el(
-      'div',
-      'eidmrz-hint',
-      'Place the two/three code lines from the back of the card inside the frame',
-    );
-    stage.append(video, scrim, frame, hint);
 
-    const panel = el('div', 'eidmrz-panel');
+    const frame = el('div', 'eidmrz-frame');
+    for (const corner of ['tl', 'tr', 'bl', 'br']) {
+      frame.appendChild(el('span', `eidmrz-corner ${corner}`));
+    }
+    const band = el('div', 'eidmrz-band');
+    band.append(el('span', 'eidmrz-band-label', 'MRZ'), el('div', 'eidmrz-scanline'));
+    frame.appendChild(band);
+
     const status = el('div', 'eidmrz-status');
     const statusDot = el('span', 'eidmrz-dot');
     const statusText = el('span', undefined, 'Starting camera…');
     status.append(statusDot, statusText);
 
-    const actions = el('div', 'eidmrz-actions');
-    const captureBtn = el('button', 'eidmrz-btn eidmrz-btn-primary', 'Capture');
-    captureBtn.type = 'button';
-    captureBtn.addEventListener('click', handlers.onCapture);
-    const cancelBtn = el('button', 'eidmrz-btn eidmrz-btn-ghost', 'Cancel');
-    cancelBtn.type = 'button';
-    cancelBtn.addEventListener('click', handlers.onCancel);
-    actions.append(captureBtn, cancelBtn);
-    panel.append(status, actions);
+    stage.append(video, frame, status);
+    overlay.append(topbar, stage);
 
-    overlay.append(topbar, stage, panel);
-    this.ui = { overlay, video, statusText, statusDot, captureBtn };
+    // Escape closes, matching the ✕.
+    overlay.tabIndex = -1;
+    overlay.addEventListener('keydown', (event) => {
+      if ((event as KeyboardEvent).key === 'Escape') handlers.onCancel();
+    });
+
+    this.ui = { overlay, video, frame, statusText, statusDot };
+    queueMicrotask(() => overlay.focus?.());
   }
 
   private showErrorCard(message: string, onClose: () => void): void {
     if (!this.ui) return;
     const { overlay } = this.ui;
-    const stage = overlay.querySelector('.eidmrz-stage');
-    const panel = overlay.querySelector('.eidmrz-panel');
-    stage?.remove();
-    panel?.remove();
+    overlay.querySelector('.eidmrz-stage')?.remove();
 
     const card = document.createElement('div');
     card.className = 'eidmrz-error-card';
@@ -361,7 +461,6 @@ export class CameraScanner {
     const p = document.createElement('p');
     p.textContent = message;
     const btn = document.createElement('button');
-    btn.className = 'eidmrz-btn eidmrz-btn-primary';
     btn.type = 'button';
     btn.textContent = 'Close';
     btn.addEventListener('click', onClose);

@@ -55,10 +55,15 @@ async function onCaptureClick() {
 `capture()` **always resolves**. A cancelled scan, a denied camera permission or
 a timeout come back as `{ success: false, errors: [...] }`.
 
-The scanner opens a full-screen overlay (e& theme): live rear-camera feed, an
-alignment frame, a status line, and **Capture** / **Cancel** buttons. It OCRs the
-framed band about once a second and resolves as soon as a valid TD1 zone is read;
-**Capture** forces an immediate attempt.
+The scanner opens a full-screen overlay (e& theme) with a **card-shaped view
+finder** sized to ID-1 proportions (85.6 × 54 mm) and a dashed guide showing
+where the code lines sit on the back of the card.
+
+Detection is **fully automatic — there is nothing to tap.** It OCRs the MRZ band
+a few times a second (sweeping the whole finder every third pass, in case the
+card is framed loosely) and resolves the moment a TD1 zone whose check digits
+verify is recognised. The only control is the **✕** close button (Escape also
+works), so an agent can back out.
 
 ### Parse text you already have
 
@@ -125,7 +130,7 @@ const reader = new EidMrzReader({
   ocr?: OcrEngine;                 // default: lazy Tesseract.js
   tesseractUrl?: string;           // CDN override for the default engine
   facingMode?: 'environment' | 'user';   // default 'environment'
-  scanIntervalMs?: number;         // default 1200
+  scanIntervalMs?: number;         // gap between auto attempts, default 700
   timeoutMs?: number;              // default 60000; 0 disables
   requireValidCheckDigits?: boolean; // default true
   mountEl?: HTMLElement;           // default document.body
@@ -181,6 +186,10 @@ eid-mrz-sdk/
   `tesseract.js@5` from jsDelivr on first OCR; override with
   `camera.tesseractUrl` or replace `camera.ocr` entirely (e.g. behind a strict
   CSP, or to use a native reader).
-- Call `reader.dispose()` when you are done to release the OCR worker.
+- Call `reader.dispose()` when you are done to release the OCR worker. A reader
+  may be scanned with repeatedly; the worker is created once and reused.
+- TD1 check digits cover the document number, the dates and the composite — but
+  **not** the name line, which no checksum protects. Keep the captured MRZ text
+  visible so the holder's name can be eyeballed and corrected.
 - `parseMrz` does no OCR — give it text. It tolerates lower case, spaces, missing
   newlines and a single unbroken 90-character string.
