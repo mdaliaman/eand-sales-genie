@@ -68,8 +68,23 @@ export class EidMrzReader {
 
   /** Open the camera scanner directly and get the raw MRZ string. */
   scanWithCamera(): Promise<string> {
+    return this.ensureScanner().scan();
+  }
+
+  /**
+   * Download the OCR model and start its worker ahead of time. Call this when
+   * the screen that offers scanning mounts — the model is several megabytes, so
+   * paying for it up front is the difference between an instant scan and a long
+   * stall on the first frame. Safe to call repeatedly; it only works once.
+   */
+  async preload(): Promise<void> {
+    if (!CameraScanner.isSupported()) return;
+    await this.ensureScanner().warmUp();
+  }
+
+  private ensureScanner(): CameraScanner {
     if (!this.scanner) this.scanner = new CameraScanner(this.cameraOptions);
-    return this.scanner.scan();
+    return this.scanner;
   }
 
   /** Release the OCR worker held by the camera scanner. */

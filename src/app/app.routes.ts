@@ -8,7 +8,6 @@ import { SalesBotComponent } from './pages/sales-bot/sales-bot.component';
 import { KycFormComponent } from './pages/kyc/kyc-form.component';
 import { KycSignatureComponent } from './pages/kyc/kyc-signature.component';
 import { LeadsComponent } from './pages/leads/leads.component';
-import { EidMrzComponent } from './pages/eid-mrz/eid-mrz.component';
 import { PlansComponent } from './pages/plans/plans.component';
 import { NotFoundComponent } from './pages/not-found/not-found.component';
 
@@ -36,8 +35,11 @@ export const routes: Routes = [
       { path: 'plans', component: PlansComponent, title: 'Plans & Offers — e& Sales Workspace' },
       { path: 'leads', component: LeadsComponent, title: 'My Leads — e& Sales Workspace' },
       {
+        // Lazy: keeps the MRZ SDK out of the initial bundle for the many
+        // sessions that never open the scanner.
         path: 'eid-mrz',
-        component: EidMrzComponent,
+        loadComponent: () =>
+          import('./pages/eid-mrz/eid-mrz.component').then((m) => m.EidMrzComponent),
         title: 'EID MRZ Reader — e& Sales Workspace',
       },
     ],

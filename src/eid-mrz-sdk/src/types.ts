@@ -76,6 +76,11 @@ export type MrzSource = () => string | Promise<string>;
  */
 export interface OcrEngine {
   recognize(image: HTMLCanvasElement): Promise<string>;
+  /**
+   * Optional: download models / spin up workers ahead of the first frame.
+   * Called when the scanner opens, and by `EidMrzReader.preload()`.
+   */
+  warmUp?(): Promise<void> | void;
   /** Optional cleanup hook, called when the scanner is disposed. */
   terminate?(): Promise<void> | void;
 }
@@ -85,6 +90,16 @@ export interface CameraScannerOptions {
   ocr?: OcrEngine;
   /** CDN URL for the default Tesseract.js engine. */
   tesseractUrl?: string;
+  /**
+   * Override where the default engine fetches `*.traineddata` from. Point this
+   * at a `tessdata_fast` mirror (or your own host) to cut model download time.
+   */
+  langPath?: string;
+  /**
+   * Per-frame timing hook — use it to profile recognition on a real device.
+   * `ms` is the full grab + OCR + parse cost of one attempt.
+   */
+  onFrame?: (info: { ms: number; found: boolean }) => void;
   /** Which camera to request. Defaults to `'environment'` (rear). */
   facingMode?: 'environment' | 'user';
   /** Milliseconds between automatic OCR attempts on the live feed. Default 1200. */

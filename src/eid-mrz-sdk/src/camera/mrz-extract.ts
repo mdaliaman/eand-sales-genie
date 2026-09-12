@@ -9,6 +9,8 @@
  * repaired deterministically rather than guessed.
  */
 
+import { parseMrz } from '../parser';
+
 const LETTER_TO_DIGIT: Record<string, string> = {
   O: '0', Q: '0', D: '0', U: '0',
   I: '1', L: '1', T: '1',
@@ -147,6 +149,34 @@ function repairLine3(line: string): string {
 }
 
 /**
+ * Candidate corrections for a line that did not come back at exactly 30 chars.
+ *
+ * A single dropped or hallucinated glyph shifts every position after it, so the
+ * check digits fail and the whole frame is wasted. But those check digits are
+ * also a free oracle: the corrected line is somewhere in a space of ~30
+ * single-edit variants, and verifying one costs microseconds. So enumerate.
+ */
+function lineVariants(line: string): string[] {
+  if (line.length === 30) return [line];
+  const out: string[] = [];
+  if (line.length > 30) {
+    if (line.length === 31) {
+      // OCR invented a glyph — try dropping each one.
+      for (let i = 0; i < line.length; i += 1) out.push(line.slice(0, i) + line.slice(i + 1));
+    }
+    out.push(line.slice(0, 30));
+    out.push(line.slice(line.length - 30));
+  } else {
+    if (line.length === 29) {
+      // OCR swallowed a glyph — `<` is by far the likeliest casualty.
+      for (let i = 0; i <= line.length; i += 1) out.push(line.slice(0, i) + '<' + line.slice(i));
+    }
+    out.push(line + '<'.repeat(30 - line.length));
+  }
+  return out.slice(0, 40);
+}
+
+/**
  * Scan OCR text for the MRZ band and return a normalised `\n`-joined TD1 string,
  * or `null` when nothing plausible is present.
  */
@@ -176,5 +206,20 @@ export function extractTd1(ocrText: string): string | null {
   if (bestScore < 70) return null;
 
   const [l1, l2, l3] = best;
-  return [repairLine1(l1), repairLine2(l2), repairLine3(l3)].join('\n');
+  const l1Variants = lineVariants(l1).map(repairLine1);
+  const l2Variants = lineVariants(l2).map(repairLine2);
+  // Line 3 carries the name and no check digit, so there is nothing to search on.
+  const line3 = repairLine3(l3);
+
+  // Only worth searching when a length was off; the common case is a single pair.
+  if (l1Variants.length > 1 || l2Variants.length > 1) {
+    for (const a of l1Variants) {
+      for (const b of l2Variants) {
+        const candidate = [a, b, line3].join('\n');
+        if (parseMrz(candidate).valid) return candidate;
+      }
+    }
+  }
+
+  return [l1Variants[0], l2Variants[0], line3].join('\n');
 }

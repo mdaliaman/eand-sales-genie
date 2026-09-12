@@ -19,7 +19,7 @@
 export { parseMrz } from './src/parser';
 export { EidMrzReader, eidMrzReader, sampleSource } from './src/reader';
 export { CameraScanner, MrzCaptureCancelled } from './src/camera/camera-scanner';
-export { createTesseractEngine, DEFAULT_TESSERACT_URL } from './src/camera/ocr';
+export { createTesseractEngine, DEFAULT_TESSERACT_URL, DEFAULT_LANG_PATH } from './src/camera/ocr';
 export { extractTd1 } from './src/camera/mrz-extract';
 export { computeCheckDigit, verifyCheckDigit, charValue } from './src/check-digit';
 export { SAMPLE_MRZ } from './src/sample';

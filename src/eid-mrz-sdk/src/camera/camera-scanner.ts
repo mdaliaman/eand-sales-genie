@@ -54,8 +54,14 @@ interface ScanUi {
 }
 
 export class CameraScanner {
-  private readonly opts: Required<Omit<CameraScannerOptions, 'ocr' | 'mountEl' | 'tesseractUrl'>> & {
+  private readonly opts: {
+    facingMode: 'environment' | 'user';
+    scanIntervalMs: number;
+    timeoutMs: number;
+    requireValidCheckDigits: boolean;
+    accentColor: string;
     mountEl: HTMLElement | null;
+    onFrame: ((info: { ms: number; found: boolean }) => void) | null;
   };
   private readonly ocr: OcrEngine;
 
@@ -73,13 +79,25 @@ export class CameraScanner {
   constructor(options: CameraScannerOptions = {}) {
     this.opts = {
       facingMode: options.facingMode ?? 'environment',
-      scanIntervalMs: options.scanIntervalMs ?? 700,
+      // The awaited OCR call is the real throttle; this is just breathing room
+      // for the compositor between frames.
+      scanIntervalMs: options.scanIntervalMs ?? 150,
       timeoutMs: options.timeoutMs ?? 60000,
       requireValidCheckDigits: options.requireValidCheckDigits ?? true,
       accentColor: options.accentColor ?? DEFAULT_ACCENT,
       mountEl: options.mountEl ?? null,
+      onFrame: options.onFrame ?? null,
     };
-    this.ocr = options.ocr ?? createTesseractEngine(options.tesseractUrl);
+    this.ocr = options.ocr ?? createTesseractEngine(options.tesseractUrl, options.langPath);
+  }
+
+  /**
+   * Download the OCR model and start its worker before the first frame. Call it
+   * when the screen that owns the scanner mounts, so tapping "scan" is instant
+   * instead of stalling on a multi-megabyte model download.
+   */
+  async warmUp(): Promise<void> {
+    await this.ocr.warmUp?.();
   }
 
   /** Whether this environment can run the camera scanner at all. */
@@ -149,6 +167,9 @@ export class CameraScanner {
 
       this.buildUi({ onCancel: () => fail(new MrzCaptureCancelled()) });
       mount.appendChild(this.ui!.overlay);
+
+      // Fetch the OCR model while the camera is spinning up rather than after.
+      void this.warmUp().catch(() => undefined);
 
       this.startCamera()
         .then(() => {
@@ -244,6 +265,8 @@ export class CameraScanner {
     if (this.busy || this.settled || !this.ui) return;
     this.busy = true;
     this.attempts += 1;
+    const startedAt = Date.now();
+    let found = false;
 
     // Mostly read the MRZ band; every third pass sweep the whole card in case
     // the holder framed it loosely.
@@ -271,6 +294,7 @@ export class CameraScanner {
       }
 
       if (parsed.valid || (parsed.success && !this.opts.requireValidCheckDigits)) {
+        found = true;
         this.setStatus('MRZ verified', 'ok');
         done(candidate);
         return;
@@ -285,6 +309,7 @@ export class CameraScanner {
       this.setStatus(this.describeOcrError(err), 'error');
     } finally {
       this.busy = false;
+      this.opts.onFrame?.({ ms: Date.now() - startedAt, found });
     }
   }
 
@@ -346,8 +371,10 @@ export class CameraScanner {
     const cw = Math.max(1, Math.min(sw, vw - sx));
     const ch = Math.max(1, Math.min(sh, vh - sy));
 
-    // Upscale modestly — Tesseract wants roughly 25-40px tall glyphs.
-    const outScale = Math.min(3, 1500 / cw);
+    // Normalise to ~1000px across. Tesseract wants roughly 25-40px tall glyphs
+    // and 30 MRZ characters at that width lands squarely in range; going wider
+    // multiplies recognition cost without improving accuracy.
+    const outScale = Math.max(0.5, Math.min(3, 1000 / cw));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(cw * outScale);
     canvas.height = Math.round(ch * outScale);

@@ -105,7 +105,7 @@ const reader = new EidMrzReader({
 
 | Export | Kind | Purpose |
 | --- | --- | --- |
-| `EidMrzReader` | class | `capture()` (camera or `source`), `parse()`, `scanWithCamera()`, `dispose()` |
+| `EidMrzReader` | class | `capture()` (camera or `source`), `parse()`, `preload()`, `scanWithCamera()`, `dispose()` |
 | `parseMrz(raw)` | function | Pure parser → `EidMrzResult` |
 | `CameraScanner` | class | Standalone camera overlay; `scan()` → raw TD1 string |
 | `MrzCaptureCancelled` | error | Thrown by `CameraScanner.scan()` when dismissed |
@@ -129,6 +129,8 @@ const reader = new EidMrzReader({
 {
   ocr?: OcrEngine;                 // default: lazy Tesseract.js
   tesseractUrl?: string;           // CDN override for the default engine
+  langPath?: string;               // where traineddata is fetched from
+  onFrame?: (i: { ms: number; found: boolean }) => void;  // profiling hook
   facingMode?: 'environment' | 'user';   // default 'environment'
   scanIntervalMs?: number;         // gap between auto attempts, default 700
   timeoutMs?: number;              // default 60000; 0 disables
@@ -180,6 +182,52 @@ eid-mrz-sdk/
         └── styles.ts            injected overlay CSS (e& theme)
 ```
 
+## Performance
+
+The default engine is Tesseract.js — a general-purpose OCR engine compiled to
+WASM. It is the portable choice, not the fast one. A native MRZ SDK (ML Kit,
+Regula, Microblink) runs a purpose-built model against the camera buffer with
+hardware acceleration and will always beat it. Expect Tesseract to be usable,
+not instant, on mid-range Android.
+
+What the SDK does to keep it as quick as it can be:
+
+| Lever | Effect |
+| --- | --- |
+| `preload()` | Fetches the model when your screen mounts, not on the first frame. **The single biggest win** — without it the first scan stalls on a multi-megabyte download. |
+| `tessdata_fast` models by default | **1.9 MB instead of 10.7 MB**, and ~84ms vs ~141ms per frame. MRZ glyphs are a clean fixed-width subset, so the heavy models buy nothing. |
+| LSTM-only engine, dictionaries off | An MRZ has no words; the DAWG passes are pure overhead. |
+| Frame normalised to ~1000px | Enough for 25-40px glyphs; wider input multiplies cost for no accuracy gain. |
+| `scanIntervalMs: 150` | The awaited OCR call is the real throttle, so the gap stays small. |
+| Check digits used as a repair oracle | A dropped or hallucinated glyph shifts every later position and would waste the frame. Enumerating ~30 single-edit variants and keeping the one that verifies costs 0.17ms and rescues reads that would otherwise need another second of scanning. |
+| Model cached in IndexedDB | Only the first ever scan pays the download. |
+
+For production, **self-host the model** to cut a cross-origin round trip: copy
+`eng.traineddata.gz` from `tessdata_fast` into your static assets and point at it —
+
+```ts
+new EidMrzReader({ camera: { langPath: '/assets/tessdata' } });
+```
+
+Measure on the real device before tuning — pass `camera.onFrame`:
+
+```ts
+new EidMrzReader({ camera: { onFrame: ({ ms, found }) => console.log(ms, found) } });
+```
+
+**If you need native speed**, keep this SDK for the UI and parsing and swap the
+engine for whatever your app already has:
+
+```ts
+const reader = new EidMrzReader({
+  camera: { ocr: { recognize: (canvas) => MyNativeBridge.readText(canvas.toDataURL()) } },
+});
+```
+
+`parseMrz`, the check-digit logic and the TD1 repair heuristics are pure
+functions — they cost microseconds and are worth reusing whatever reads the
+pixels.
+
 ## Notes
 
 - The SDK does not bundle Tesseract. The default engine injects
@@ -189,7 +237,9 @@ eid-mrz-sdk/
 - Call `reader.dispose()` when you are done to release the OCR worker. A reader
   may be scanned with repeatedly; the worker is created once and reused.
 - TD1 check digits cover the document number, the dates and the composite — but
-  **not** the name line, which no checksum protects. Keep the captured MRZ text
-  visible so the holder's name can be eyeballed and corrected.
+  **not** the name line, which no checksum protects. They are also mod-10, so a
+  corrupted read slips through roughly one time in ten per digit. Treat `valid`
+  as strong evidence, not proof, and keep the captured MRZ text visible so the
+  holder's details can be eyeballed and corrected.
 - `parseMrz` does no OCR — give it text. It tolerates lower case, spaces, missing
   newlines and a single unbroken 90-character string.

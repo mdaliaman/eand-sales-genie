@@ -1,4 +1,4 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 
 import { EidMrzReader, type EidMrzResult } from '@eid-mrz-sdk';
 
@@ -7,7 +7,7 @@ import { EidMrzReader, type EidMrzResult } from '@eid-mrz-sdk';
   standalone: true,
   templateUrl: './eid-mrz.component.html',
 })
-export class EidMrzComponent {
+export class EidMrzComponent implements OnInit, OnDestroy {
   /**
    * The shippable SDK. With no `source`, `capture()` opens the device camera,
    * runs OCR and returns the parsed MRZ — all of that lives in the SDK folder.
@@ -38,6 +38,15 @@ export class EidMrzComponent {
       { label: 'Date of expiry', value: data.dateOfExpiry || '—', ok: data.dateOfExpiryValid },
     ];
   });
+
+  /** Fetch the OCR model now so the first scan does not stall on the download. */
+  ngOnInit(): void {
+    void this.reader.preload().catch(() => undefined);
+  }
+
+  ngOnDestroy(): void {
+    void this.reader.dispose().catch(() => undefined);
+  }
 
   /** "Capture MRZ" — the button only triggers this one SDK call. */
   async captureMrz(): Promise<void> {
